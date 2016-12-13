@@ -1,0 +1,54 @@
+localrules: all
+
+SAMPLES, = glob_wildcards("fasta/{sample}.fna")
+
+
+
+rule all:
+    input:
+        "merged_fasta/all.fasta"
+    threads: 60
+
+rule merge_fasta:
+    input:
+        expand('clean_fasta/{sample}.fasta', sample=SAMPLES)
+    output:
+        "merged_fasta/all.fasta"
+    threads: 1
+    shell:
+        "cat {input} > {output}"
+
+rule fix_fasta:
+    input:
+        "aligned_fasta/{sample}.fasta"
+    output:
+        "clean_fasta/{sample}.fasta"
+    threads: 1
+    shell:
+        "python fastafix.py {input} {output} {wildcards.sample}"
+
+rule fix_coordinate:
+    input:
+        "aligned_xfma/{sample}.xfma"
+    output:
+        "aligned_fasta/{sample}.fasta"
+    log:
+        "logs/aligned_fasta/{sample}.log"
+    threads: 1
+    shell:
+        "x2fa.py {input} reference/FSC200.fna 20 {output}  >  {log}"
+
+rule align_genome:
+    input:
+        "reference/FSC200.fna",
+        "reference/FSC771.fna",
+        "reference/FSC1005.fna",
+        "reference/FSC1006.fna",
+        "fasta/{sample}.fna"
+    output:
+        "aligned_xfma/{sample}.xfma"
+    log:
+        "logs/aligned_xfma/{sample}.log"
+    threads: 1
+    shell:
+        "progressiveMauve --output={output} {input}  > {log}"
