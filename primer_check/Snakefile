@@ -1,0 +1,87 @@
+#configfile: "config.yaml"
+localrules: all
+
+from Bio.Emboss import Primer3
+
+
+SAMPLES, = glob_wildcards("fasta/{sample}.fna")
+PRIMERS, = glob_wildcards("primer3/{primerset}.eprimer3")
+
+rule all:
+    input:
+        coord="concat_coord/coordinates.txt",
+        primers=expand("primer3/{primerset}.eprimer3", primerset=PRIMERS)
+    threads: 60
+
+
+rule concat_coord:
+        input:
+            expand("pcr_coord_clean/{sample}.coord", sample=SAMPLES)
+        output:
+            default="concat_coord/coordinates.txt",
+            order="concat_coord/coordinates_sorted.txt"
+        shell:
+            """
+            cat {input} > {output.default}
+            cat {input} | sort -k2 - > {output.order}
+            """
+
+rule sts_clean:
+        input:
+            "pcr_coord/{sample}.coord"
+        output:
+            "pcr_coord_clean/{sample}.coord"
+        run:
+            import csv
+            from os.path import splitext, basename
+            stsfilename = input[0]
+            strain = splitext(basename(stsfilename))[0]
+            sts_outfile = open(output[0], "w")
+            with open(stsfilename, 'r') as stsfile:
+                stsreader = csv.reader(stsfile, delimiter='\t')
+                for row in stsreader:
+                    row[0] = strain
+                    row_out = '\t'.join(row) + "\n"
+                    sts_outfile.write(row_out)
+
+rule run_epcr:
+    input:
+        fa="fasta/{sample}.fna",
+        #primer="sts/{primerset}.sts"
+        primer="sts_concat/primers.sts"
+    output:
+        "pcr_coord/{sample}.coord"
+    threads: 1
+    shell:
+        "e-PCR -m 30 -t 3 -n 1 -g 0  -o {output} {input.primer} {input.fa}"
+
+rule concat_sts:
+    input:
+        #"sts/{primerset}.sts"
+        expand("sts/{primerset}.sts", primerset=PRIMERS)
+    output:
+        "sts_concat/primers.sts"
+    shell:
+        "cat {input} > {output}"
+
+rule primer2sts:
+    input:
+#        "primer3/{primerset}.eprimer3"
+        "primer3/{primerset}.eprimer3"
+    output:
+        "sts/{primerset}.sts"
+    run:
+        h = open(input[0], "r")
+        primer_info = Primer3.read(h)
+        h.close()
+        num_primers = len(primer_info.primers)
+        primer_names = primer_info.comments.replace(' \n', '').split('# ')[2::]
+        primer_outfile = open(output[0], "w")
+        for i in range(0, num_primers):
+            print(primer_names[i])
+            for_seq = primer_info.primers[i].forward_seq
+            rev_seq = primer_info.primers[i].reverse_seq
+            pcr_size = primer_info.primers[i].size
+            primer_output = '%s\t%s\t%s\t%s\n' % (primer_names[i], for_seq, rev_seq, pcr_size)
+            primer_outfile.write(primer_output)
+        primer_outfile.close()
