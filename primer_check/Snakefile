@@ -1,25 +1,33 @@
-#configfile: "config.yaml"
-localrules: all
+configfile: "config.yaml"
+#localrules: all
+
 
 from Bio.Emboss import Primer3
 
 
 SAMPLES, = glob_wildcards("fasta/{sample}.fna")
-PRIMERS, = glob_wildcards("primer3/{primerset}.eprimer3")
+#PRIMERS, = glob_wildcards("primer3/{primerset}.eprimer3")
+PRIMERS = config['primer3files']
 
 rule all:
     input:
-        coord="concat_coord/coordinates.txt",
-        primers=expand("primer3/{primerset}.eprimer3", primerset=PRIMERS)
+        coord=expand("{project}/concat_coord/coordinates.txt", project=config['project'])
     threads: 60
 
+rule clean:
+        input:
+            expand("{project}", project=config['project'])
+        shell:
+            """
+            rm -rf {input}
+            """
 
 rule concat_coord:
         input:
-            expand("pcr_coord_clean/{sample}.coord", sample=SAMPLES)
+            expand("{project}/pcr_coord_clean/{sample}.coord", sample=SAMPLES, project=config['project'])
         output:
-            default="concat_coord/coordinates.txt",
-            order="concat_coord/coordinates_sorted.txt"
+            default="{project}/concat_coord/coordinates.txt",
+            order="{project}/concat_coord/coordinates_sorted.txt"
         shell:
             """
             cat {input} > {output.default}
@@ -28,9 +36,9 @@ rule concat_coord:
 
 rule sts_clean:
         input:
-            "pcr_coord/{sample}.coord"
+            "{project}/pcr_coord/{sample}.coord"
         output:
-            "pcr_coord_clean/{sample}.coord"
+            "{project}/pcr_coord_clean/{sample}.coord"
         run:
             import csv
             from os.path import splitext, basename
@@ -47,10 +55,9 @@ rule sts_clean:
 rule run_epcr:
     input:
         fa="fasta/{sample}.fna",
-        #primer="sts/{primerset}.sts"
-        primer="sts_concat/primers.sts"
+        primer="{project}/sts_concat/primers.sts"
     output:
-        "pcr_coord/{sample}.coord"
+        "{project}/pcr_coord/{sample}.coord"
     threads: 1
     shell:
         "e-PCR -m 30 -t 3 -n 1 -g 0  -o {output} {input.primer} {input.fa}"
@@ -58,18 +65,17 @@ rule run_epcr:
 rule concat_sts:
     input:
         #"sts/{primerset}.sts"
-        expand("sts/{primerset}.sts", primerset=PRIMERS)
+        expand("{project}/sts/{primerset}.sts", primerset=config['primer3files'], project=config['project'])
     output:
-        "sts_concat/primers.sts"
+        "{project}/sts_concat/primers.sts"
     shell:
         "cat {input} > {output}"
 
 rule primer2sts:
     input:
-#        "primer3/{primerset}.eprimer3"
         "primer3/{primerset}.eprimer3"
     output:
-        "sts/{primerset}.sts"
+        "{project}/sts/{primerset}.sts"
     run:
         h = open(input[0], "r")
         primer_info = Primer3.read(h)
