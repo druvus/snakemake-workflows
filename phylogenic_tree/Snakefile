@@ -6,11 +6,37 @@ REFERENCES, = glob_wildcards("reference/{reference}.fna")
 
 rule all:
     input:
-        "snp_fasta/all.fasta"
+        "raxml_tree/RAxML_result.output"
     threads: 60
 
-#raxmlHPC-PTHREADS-SSE3 -T 30 -f d -p 12345 -m GTRGAMMA -s all.fasta -n Fran --no-bfgs
-#raxmlHPC-PTHREADS-SSE3 -T 40 -f e -m GTRGAMMA -s all.fasta -t RAxML_bestTree.Fran -n PARAMS --no-bfgs
+
+rule move_tree:
+    input:
+        "RAxML_result.output"
+    output:
+        "raxml_tree/RAxML_result.output"
+    shell:
+        "mv RAxML_* raxml_tree"
+
+rule raxmltree:
+    input:
+        tree="RAxML_bestTree.tree",
+        fasta="snp_fasta/all.fasta"
+    output:
+        "RAxML_result.output"
+    threads: 20
+    shell:
+        "raxmlHPC-PTHREADS-SSE3 -T {threads} -f e -m GTRGAMMA -s {input.fasta} -t {input.tree} -n output --no-bfgs"
+
+
+rule raxmltree_pre:
+    input:
+        "snp_fasta/all.fasta"
+    output:
+        "RAxML_bestTree.tree"
+    threads: 20
+    shell:
+        "raxmlHPC-PTHREADS-SSE3 -T {threads} -f d -p 12345 -m GTRGAMMA -s {input} -n tree --no-bfgs "
 
 rule onlysnp_fasta:
     input:
