@@ -1,13 +1,51 @@
 localrules: all
 
 SAMPLES, = glob_wildcards("fasta/{sample}.fna")
-
+REFERENCES, = glob_wildcards("reference/{reference}.fna")
 
 
 rule all:
     input:
-        "merged_fasta/all.fasta"
+        "raxml_tree/RAxML_result.output"
     threads: 60
+
+
+rule move_tree:
+    input:
+        "RAxML_result.output"
+    output:
+        "raxml_tree/RAxML_result.output"
+    shell:
+        "mv RAxML_* raxml_tree"
+
+rule raxmltree:
+    input:
+        tree="RAxML_bestTree.tree",
+        fasta="snp_fasta/all.fasta"
+    output:
+        "RAxML_result.output"
+    threads: 20
+    shell:
+        "raxmlHPC-PTHREADS-SSE3 -T {threads} -f e -m GTRGAMMA -s {input.fasta} -t {input.tree} -n output --no-bfgs"
+
+
+rule raxmltree_pre:
+    input:
+        "snp_fasta/all.fasta"
+    output:
+        "RAxML_bestTree.tree"
+    threads: 20
+    shell:
+        "raxmlHPC-PTHREADS-SSE3 -T {threads} -f d -p 12345 -m GTRGAMMA -s {input} -n tree --no-bfgs "
+
+rule onlysnp_fasta:
+    input:
+        "merged_fasta/all.fasta"
+    output:
+        "snp_fasta/all.fasta"
+    threads: 1
+    shell:
+        "snp-sites -cb -o {output} {input}"
 
 rule merge_fasta:
     input:
@@ -40,10 +78,7 @@ rule fix_coordinate:
 
 rule align_genome:
     input:
-        "reference/FSC200.fna",
-        "reference/FSC771.fna",
-        "reference/FSC1005.fna",
-        "reference/FSC1006.fna",
+        expand('reference/{reference}.fna', reference=REFERENCES),
         "fasta/{sample}.fna"
     output:
         "aligned_xfma/{sample}.xfma"
