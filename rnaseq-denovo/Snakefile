@@ -1,0 +1,128 @@
+# **** Variables ****
+
+configfile: "/Users/andreassjodin/Code/snakemake-workflows/rnaseq-denovo/config.yaml"
+
+
+# **** Imports ****
+
+import glob
+import datetime
+import os
+
+#unmerge-paired-reads.sh sortmerna/1_rejected.fastq 1_1.fastq 1_2.fastq
+
+rule all:
+    input:
+        expand("fastq_merged/{sample}_merged.fastq", sample=config["samples"]),
+        "rRNA_databases/silva-euk-28s-id98.fasta.idx.stats",
+        expand("fastq_concatenated/{run_name}_1.fastq", run_name=config["run_name"])
+
+    threads: 60
+
+rule concenate_trimmed:
+    input:
+        p1=expand("fastq_trimmomatic/{sample}_paired_1.fastq", sample=config["samples"]),
+        p2=expand("fastq_trimmomatic/{sample}_paired_2.fastq", sample=config["samples"])
+    output:
+        p1=expand("fastq_concatenated/{run_name}_1.fastq", run_name=config["run_name"]),
+        p2=expand("fastq_concatenated/{run_name}_2.fastq", run_name=config["run_name"]),
+    message: "Concatenating read files"
+    shell:
+        """
+        cat {input.p1} > {output.p1}
+        cat {input.p2} > {output.p2}
+        """
+
+
+rule trimmomatic:
+    input:
+        r1="fastq_norRNA/{sample}_norRNA_1.fastq",
+        r2="fastq_norRNA/{sample}_norRNA_2.fastq"
+    output:
+        p1="fastq_trimmomatic/{sample}_paired_1.fastq",
+        p2="fastq_trimmomatic/{sample}_paired_2.fastq",
+        u1="fastq_trimmomatic/{sample}_unpaired_1.fastq",
+        u2="fastq_trimmomatic/{sample}_unpaired_2.fastq"
+    message: "Trimming read files"
+    shell:
+        """
+        trimmomatic PE -threads {threads} -phred33 {input.r1} {input.r2} {output.p1} {output.u1} {output.p2} {output.u2}  ILLUMINACLIP:adapter.fa:1:30:9 SLIDINGWINDOW:7:20 MINLEN:50
+        """
+
+rule unmerge_paired_reads:
+    input:
+        "fastq_merged/{sample}_merged.fastq_clean.fastq"
+    output:
+        r1="fastq_norRNA/{sample}_norRNA_1.fastq",
+        r2="fastq_norRNA/{sample}_norRNA_2.fastq"
+    message: "Unmerging read file:\n{input}"
+    shell:
+        """
+        unmerge-paired-reads.sh  {input} {output.r1} {output.r2}
+        """
+
+rule sortmerna:
+    input:
+        fq="fastq_merged/{sample}_merged.fastq",
+        rfam58s="rRNA_databases/rfam-5.8s-database-id98.fasta",
+        rfam5s="rRNA_databases/rfam-5s-database-id98.fasta",
+        arc16s="rRNA_databases/silva-arc-16s-id95.fasta",
+        arc23s="rRNA_databases/silva-arc-23s-id98.fasta",
+        bac16s="rRNA_databases/silva-bac-16s-id90.fasta",
+        bac23s="rRNA_databases/silva-bac-23s-id98.fasta",
+        euk18s="rRNA_databases/silva-euk-18s-id95.fasta",
+        euk28s="rRNA_databases/silva-euk-28s-id98.fasta"
+    output:
+        rejected="fastq_merged/{sample}_merged.fastq_clean.fastq"
+    message: "Running sortmerna"
+    shell:
+        """
+        sortmerna --ref {input.rfam58s},{input.rfam58s}.idx:{input.rfam5s},{input.rfam5s}.idx:{input.arc16s},{input.arc16s}.idx:{input.arc23s},{input.arc23s}.idx:{input.bac16s},{input.bac16s}.idx:{input.bac23s},{input.bac23s}.idx:{input.euk18s},{input.euk18s}.idx:{input.euk28s},{input.euk28s}.idx --reads {input.fq} --aligned {input.fq}_aligned --log --other {input.fq}_clean  -a 1 -v --paired_in --fastx
+        """
+
+rule indexdb_rna:
+    input:
+        rfam58s="rRNA_databases/rfam-5.8s-database-id98.fasta",
+        rfam5s="rRNA_databases/rfam-5s-database-id98.fasta",
+        arc16s="rRNA_databases/silva-arc-16s-id95.fasta",
+        arc23s="rRNA_databases/silva-arc-23s-id98.fasta",
+        bac16s="rRNA_databases/silva-bac-16s-id90.fasta",
+        bac23s="rRNA_databases/silva-bac-23s-id98.fasta",
+        euk18s="rRNA_databases/silva-euk-18s-id95.fasta",
+        euk28s="rRNA_databases/silva-euk-28s-id98.fasta"
+    output:
+        euk28s="rRNA_databases/silva-euk-28s-id98.fasta.idx.stats"
+    message: "Indexing databases"
+    shell:
+        """
+        indexdb_rna  --ref {input.rfam58s},{input.rfam58s}.idx
+        indexdb_rna  --ref {input.rfam5s},{input.rfam5s}.idx
+        indexdb_rna  --ref {input.arc16s},{input.arc16s}.idx
+        indexdb_rna  --ref {input.arc23s},{input.arc23s}.idx
+        indexdb_rna  --ref {input.bac16s},{input.bac16s}.idx
+        indexdb_rna  --ref {input.bac23s},{input.bac23s}.idx
+        indexdb_rna  --ref {input.euk18s},{input.euk18s}.idx
+        indexdb_rna  --ref {input.euk28s},{input.euk28s}.idx
+        """
+
+rule unpack:
+    input: r1 = lambda wildcards: glob.glob("{directory}/6_120323_AC0BTCACXX_{sample}_index{sample}_1.fastq.gz".format(directory=config["read_directory"], sample=wildcards.sample)),
+           r2 = lambda wildcards: glob.glob("{directory}/6_120323_AC0BTCACXX_{sample}_index{sample}_2.fastq.gz".format(directory=config["read_directory"], sample=wildcards.sample))
+    output: r1="fastq_unpacked/{sample}_R1.fastq", r2="fastq_unpacked/{sample}_R2.fastq"
+    message: "Unpacking read files:\nR1: {input.r1}\nR2: {input.r2}"
+    shell:
+        """
+        gzip -dc {input.r1} > {output.r1}
+        gzip -dc {input.r2} > {output.r2}
+        """
+
+rule merge_paired_reads:
+    input:
+        r1="fastq_unpacked/{sample}_R1.fastq",
+        r2="fastq_unpacked/{sample}_R2.fastq"
+    output: "fastq_merged/{sample}_merged.fastq"
+    message: "Merging read files:\nR1: {input.r1}\nR2: {input.r2}"
+    shell:
+        """
+        merge-paired-reads.sh {input.r1} {input.r2} {output}
+        """
