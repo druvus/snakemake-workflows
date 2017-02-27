@@ -1,6 +1,6 @@
 # **** Variables ****
 
-configfile: "/Users/andreassjodin/Code/snakemake-workflows/rnaseq-denovo/config.yaml"
+configfile: "config.yaml"
 
 
 # **** Imports ****
@@ -9,7 +9,6 @@ import glob
 import datetime
 import os
 
-#unmerge-paired-reads.sh sortmerna/1_rejected.fastq 1_1.fastq 1_2.fastq
 
 rule all:
     input:
