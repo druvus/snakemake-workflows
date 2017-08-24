@@ -1,0 +1,114 @@
+# **** Variables ****
+
+configfile: "config.yaml"
+
+
+# **** Imports ****
+
+import glob
+import datetime
+import os
+
+
+rule all:
+    input:
+        expand("pilon/{sample}/{sample}_pilon.fasta", sample=config["samples"]),
+        expand("pilon/{sample}/{sample}-scaffolds_500.bam.bai", sample=config["samples"]),
+        expand("dnadiff/{sample}/{sample}.snps", sample=config["samples"])
+    threads: 60
+
+
+rule abyss:
+    input: r1 = lambda wildcards: glob.glob("{directory}/{sample}_R1.fastq.gz".format(directory=config["read_directory"], sample=wildcards.sample)),
+           r2 = lambda wildcards: glob.glob("{directory}/{sample}_R2.fastq.gz".format(directory=config["read_directory"], sample=wildcards.sample))
+    output: "assembly/{sample}/{sample}-scaffolds.fa"
+    params: 
+           sample="{sample}"
+    message: "Assembly read files:\nR1: {input.r1}\nR2: {input.r2}"
+    threads: 10
+    shell:
+        """
+         abyss-pe j={threads} -C assembly/{params.sample}  k=51 name={params.sample} in='../../{input.r1} ../../{input.r2}' v=-v
+        """
+
+
+rule filter_assembly:
+    input: "assembly/{sample}/{sample}-scaffolds.fa"
+    output: "assembly/{sample}/{sample}-scaffolds_500.fa"
+    message: "Removing contigs shorter than 500bp"
+    threads: 10
+    shell:
+        """
+         pullseq -i {input} -m 500 > {output} 
+        """
+
+rule pilon_prep:
+    input: "assembly/{sample}/{sample}-scaffolds_500.fa"
+    output: "pilon/{sample}/{sample}-scaffolds_500.fa"
+    message: "Moving file: {input}"
+    threads: 1
+    shell:
+        """
+         mv {input} {output}
+        """
+
+rule bwa_index:
+    input: "pilon/{sample}/{sample}-scaffolds_500.fa"
+    output: "pilon/{sample}/{sample}-scaffolds_500.fa.bwt"
+    message: "Indexing file: {input}"
+    threads: 1
+    shell:
+        """
+         bwa index {input}
+        """
+
+rule bwa_mapping:
+    input: r1 = lambda wildcards: glob.glob("{directory}/{sample}_R1.fastq.gz".format(directory=config["read_directory"], sample=wildcards.sample)),
+           r2 = lambda wildcards: glob.glob("{directory}/{sample}_R2.fastq.gz".format(directory=config["read_directory"], sample=wildcards.sample)),
+           fasta = "pilon/{sample}/{sample}-scaffolds_500.fa"
+    output: "pilon/{sample}/{sample}-scaffolds_500.bam"
+    message: "Mapping file: {input}"
+    threads: 12
+    shell:
+        """
+         bwa mem  -t {threads} {input.fasta} {input.r1} {input.r2} | samtools view -bs - | samtools sort -@ {threads} - -o {output}
+        """
+
+rule bwa_mapping_index:
+    input: "pilon/{sample}/{sample}-scaffolds_500.bam"
+    output: "pilon/{sample}/{sample}-scaffolds_500.bam.bai"
+    message: "Indexing file: {input}"
+    threads: 1
+    shell:
+        """
+         samtools index {input}
+        """
+
+rule pilon:
+    input: bam = "pilon/{sample}/{sample}-scaffolds_500.bam",
+           fasta = "pilon/{sample}/{sample}-scaffolds_500.fa"
+    output: "pilon/{sample}/{sample}_pilon.fasta"
+    params:
+           outdir="pilon/{sample}",
+           prefix="{sample}_pilon"
+    message: "Indexing file: {input}"
+    threads: 10
+    shell:
+        """
+         pilon --genome {input.fasta} --frags {input.bam} --threads {threads} --output {params.prefix}  --outdir {params.outdir} --changes
+        """
+
+rule dnadiff:
+    input: ref = "ncbi/GCF_000005845.2_ASM584v2_genomic.fna",
+           fasta = "pilon/{sample}/{sample}_pilon.fasta"
+    output: "dnadiff/{sample}/{sample}.snps"
+    params:
+           prefix="{sample}"
+    message: "Dna diff file: {input.fasta}"
+    shell:
+        """
+         dnadiff {input.ref} {input.fasta} -p {params.prefix}
+         mv {params.prefix}* dnadiff/{params.prefix}
+        """
+
+

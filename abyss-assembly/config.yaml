@@ -1,0 +1,13 @@
+# number of threads for multi-threaded applications - overriden by -j option to snakemake
+num_threads: 10
+
+# Directory where the raw reads are stored
+read_directory: "fastq"
+
+
+# Unique sample descriptors - should be in the file names
+samples: ["MG1655", "D5", "D6", "D7", "D8", "D9", "D10"]
+
+
+# kmer value to use
+kvalue: 51
