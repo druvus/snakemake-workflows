@@ -21,13 +21,58 @@ rule all:
         "clusters.txt",
         "trinity_db/Genome",
         expand("fastq_mapped_star_trinity/{sample}_Aligned.out.bam", sample=config["samples"]),
-        "Lace/SuperDuper.fasta"
+#        "Lace/SuperDuper.fasta",
+        "super_db/Genome",
+        expand("fastq_mapped_star_super/{sample}_Aligned.out.bam", sample=config["samples"]),
+        expand("fastq_mapped_star_super/{sample}_SJ.out.tab", sample=config["samples"]),
+        "mobius/Spliced.gtf"
     threads: 60
 
+rule mobius:
+    input:
+        fasta="Lace/SuperDuper.fasta",
+        sj=expand("fastq_mapped_star_super/{sample}_SJ.out.tab", sample=config["samples"])
+    output:
+        sj="mobius/SJ.out.tab",
+        gtf="mobius/Spliced.gtf"
+    message: "Running Lace"
+    threads: 30
+    shell:
+        """
+        cat {input.sj} > {output.sj}
+        Mobius.py {output.sj} {input.fasta}
+        mv Spliced.gtf {output.gtf}
+        """
 
-# Lace.py trinity_out_dir/Trinity.fasta clusters.txt --cores 24 --outputDir Lace
+
+rule star_super:
+    input:
+        p1="fastq_trimmomatic/{sample}_paired_1.fastq",
+        p2="fastq_trimmomatic/{sample}_paired_2.fastq"
+    output:
+        bam="fastq_mapped_star_super/{sample}_Aligned.out.bam",
+        sj="fastq_mapped_star_super/{sample}_SJ.out.tab"
+    message: "Running star (super)"
+    threads: 10
+    params:
+        out="fastq_mapped_star_super/{sample}_"
+    shell:
+        """
+        STAR --genomeDir super_db  --readFilesIn {input.p1} {input.p2}  --outFileNamePrefix {params.out}  --outSAMtype BAM Unsorted --runThreadN {threads}
+        """
 
 
+rule star_index_super:
+    input:
+        "Lace/SuperDuper.fasta"
+    output:
+        "super_db/Genome"
+    message: "Building star index"
+    threads: 20
+    shell:
+        """
+        STAR --runMode genomeGenerate --runThreadN {threads} --genomeDir super_db --genomeFastaFiles {input} --limitGenomeGenerateRAM 184541014058
+        """
 
 rule lace:
     input:
@@ -74,7 +119,7 @@ rule star_trinity:
         p2="fastq_trimmomatic/{sample}_paired_2.fastq"
     output:
         "fastq_mapped_star_trinity/{sample}_Aligned.out.bam"
-    message: "Running bowtie"
+    message: "Running star"
     threads: 10
     params: 
         out="fastq_mapped_star_trinity/{sample}_"
