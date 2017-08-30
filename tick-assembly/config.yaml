@@ -1,0 +1,12 @@
+# number of threads for multi-threaded applications - overriden by -j option to snakemake
+threads: 20
+
+# Directory where the raw reads are stored
+read_directory: "../fastq_illumina"
+
+# Unique sample descriptors - should be in the file names
+samples: ["ANE58", "DALBE3", "DVE1"]
+
+run_name: "FLE"
+
+kraken_db: "/mnt/powervault/emihag/projects/mock_community/data/bacteria_20170614"

@@ -1,0 +1,53 @@
+# **** Variables ****
+
+configfile: "config.yaml"
+
+
+# **** Imports ****
+
+import glob
+import datetime
+import os
+
+
+rule all:
+    input:
+        expand("{run}/kraken/{sample}.kraken.report", sample=config['samples'], run=config['run_name']),
+        expand("{run}/fastqc_raw/{sample}_fastqc/",sample=config['samples'], run=config['run_name'])
+
+rule kraken:
+    input: r1 = lambda wildcards: glob.glob("{directory}/{sample}_R1.fastq.gz".format(directory=config["read_directory"], sample=wildcards.sample)),
+           r2 = lambda wildcards: glob.glob("{directory}/{sample}_R2.fastq.gz".format(directory=config["read_directory"], sample=wildcards.sample))
+    output: kraken="{run}/kraken/{sample}.kraken"
+    params:
+        kraken_db=config['kraken_db']
+    message: "Classifying read file pairs with kraken:\nR1: {input.r1}\nR2: {input.r2}"
+    threads: config['threads']
+    shell:
+        """
+        kraken --db {params.kraken_db} -t {threads} --fastq-input --gzip-compressed --paired {input.r1} {input.r2} > {output}
+        """
+
+rule kraken_report:
+    input:
+        "{run}/kraken/{sample}.kraken"
+    output: "{run}/kraken/{sample}.kraken.report"
+    params:
+        kraken_db=config['kraken_db']
+    message: "Summerize kraken file:\n {input}"
+    threads: 1
+    shell:
+        """
+        kraken-report --db {params.kraken_db} {input} > {output}
+        """
+rule fastqc_raw:
+    input: r1 = lambda wildcards: glob.glob("{directory}/{sample}_R1.fastq.gz".format(directory=config["read_directory"], sample=wildcards.sample)),
+           r2 = lambda wildcards: glob.glob("{directory}/{sample}_R2.fastq.gz".format(directory=config["read_directory"], sample=wildcards.sample))
+    output: "{run}/fastqc_raw/{sample}_fastqc/"
+    params: dir="{run}/fastqc_raw"
+    threads: 1
+    shell:
+        """
+        fastqc -q -t {threads} --outdir {params.dir} {input.r1}
+        fastqc -q -t {threads} --outdir {params.dir} {input.r2}
+        """
