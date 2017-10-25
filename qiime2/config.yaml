@@ -11,4 +11,15 @@ batches: ["ticks1", "ticks2", "ticks3" ]
 samples: ['1', '2', '3']
 
 metacategory: ['Species']
-samplingdepth: '1000'
+sampling-depth: '10000'
+perc-identity: 99
+
+#alpha
+rarefaction-min-depth: 1
+rarefaction-max-depth: 20000
+rarefaction-steps: 20
+rarefaction-iterations: 10
+
+#beta
+rarefaction-metric: "unweighted_unifrac"
+correlation-method: "spearman"
