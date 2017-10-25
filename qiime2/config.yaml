@@ -1,0 +1,14 @@
+# number of threads for multi-threaded applications - overriden by -j option to snakemake
+threads: 24
+
+# Directory where the raw reads are stored
+read_directory: "demultiplex"
+
+
+run_name: "ticks"
+batches: ["ticks1", "ticks2", "ticks3" ]
+#batches: ["ticks1"]
+samples: ['1', '2', '3']
+
+metacategory: ['Species']
+samplingdepth: '1000'

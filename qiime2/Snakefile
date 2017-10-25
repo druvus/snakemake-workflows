@@ -1,0 +1,363 @@
+# **** Variables ****
+
+# **** Imports ****
+
+import glob
+import datetime
+import os
+
+rule all:
+    input:
+        expand("{run}/{run}-featuretable.qzv", run=config['run_name']),
+        expand("{run}/{run}-rep-seqs-dada2.qzv", run=config['run_name']),
+        #expand("{run}/{run}-unrooted-tree.qza", run=config['run_name']),
+        expand("{run}/{run}-core-metrics-results/{run}-faith-pd-group-significance.qzv", run=config['run_name']),
+        expand("{run}/{run}-core-metrics-results/{run}-unweighted-unifrac-group-significance.qzv", run=config['run_name']),
+        expand("{run}/{run}-core-metrics-results/{run}-unweighted-unifrac-emperor.qzv", run=config['run_name']),
+        expand("{run}/{run}-core-metrics-results/{run}-weighted-unifrac-emperor.qzv", run=config['run_name']),
+        expand("{run}/benchmark/qiime2_taxa_barplot.txt", run=config['run_name']),
+        expand("{run}/{run}-taxonomy.qzv", run=config['run_name'])
+
+rule qiime2_import:
+    input:
+            "{run}-files.tsv"
+    output:
+        "{run}/{run}-demux.qza"
+    benchmark:
+        "{run}/benchmark/import.txt"
+    message: "Importing data in {input}"
+    threads: 1
+    shell:
+        """
+        qiime tools import --type SampleData[PairedEndSequencesWithQuality] --input-path {input} --output-path {output}  --source-format PairedEndFastqManifestPhred33
+        """
+
+rule qiime2_demux:
+    input:
+        "{run}/{run}-demux.qza"
+    output:
+        "{run}/{run}-demux.qzv"
+    benchmark:
+        "{run}/benchmark/qiime2_demux.txt"
+    message: "Demultiplexing and summary"
+    threads: 1
+    shell:
+        """
+        qiime demux summarize --i-data {input} --o-visualization {output}
+        """
+
+rule qiime2_dada2:
+    input:
+        "{run}/{run}-demux.qza"
+    output:
+        repset = "{run}/{run}-rep-seqs-dada2.qza",
+        table = "{run}/{run}-table-dada2.qza"
+    benchmark:
+        "{run}/benchmark/qiime2_dada2.txt"
+    message: "Denoising"
+    threads: config['threads']
+    shell:
+        """
+        qiime dada2 denoise-paired \
+        --i-demultiplexed-seqs {input} \
+        --p-trim-left-f 0  \
+        --p-trunc-len-f 225  \
+        --p-trim-left-r 0  \
+        --p-trunc-len-r 225 \
+        --p-n-threads {threads} \
+        --o-representative-sequences {output.repset} \
+        --o-table {output.table}
+        """
+
+
+rule qiime2_featuretable_summarize:
+    input:
+        table = "{run}/{run}-table-dada2.qza",
+        metadata = "{run}-metadata.tsv"
+    output:
+        "{run}/{run}-featuretable.qzv"
+    benchmark:
+        "{run}/benchmark/qiime2_featuretable_summarize.txt"
+    message: "Feature Table Summarize"
+    threads: 1
+    shell:
+        """
+        qiime feature-table summarize \
+        --i-table {input.table} \
+        --o-visualization {output} \
+        --m-sample-metadata-file {input.metadata}
+        """
+
+rule qiime2_featuretable_tabulateseqs:
+    input:
+        "{run}/{run}-rep-seqs-dada2.qza"
+    output:
+        "{run}/{run}-rep-seqs-dada2.qzv"
+    benchmark:
+        "{run}/benchmark/qiime2_featuretable_tabulateseqs.txt"
+    message: "Feature Table Tabulate Seqs"
+    threads: 1
+    shell:
+        """
+        qiime feature-table tabulate-seqs \
+         --i-data {input} \
+         --o-visualization {output}
+        """
+
+rule qiime2_alignment_mafft:
+    input:
+        "{run}/{run}-rep-seqs-dada2.qza"
+    output:
+        "{run}/{run}-aligned-rep-seqs.qza"
+    benchmark:
+        "{run}/benchmark/qiime2_alignment_mafft.txt"
+    message: "Alignment using mafft"
+    threads: config['threads']
+    shell:
+        """
+        qiime alignment mafft \
+        --i-sequences {input} \
+        --o-alignment {output} \
+        --p-n-threads {threads}
+        """
+
+rule qiime2_alignment_mask:
+    input:
+        "{run}/{run}-aligned-rep-seqs.qza"
+    output:
+        "{run}/{run}-masked-aligned-rep-seqs.qza"
+    benchmark:
+        "{run}/benchmark/qiime2_alignment_mask.txt"
+    message: "Masking alignment"
+    threads: 1
+    shell:
+        """
+        qiime alignment mask \
+        --i-alignment {input} \
+        --o-masked-alignment {output}
+        """
+
+rule qiime2_phylogeny_fasttree:
+    input:
+        "{run}/{run}-masked-aligned-rep-seqs.qza"
+    output:
+        "{run}/{run}-unrooted-tree.qza"
+    benchmark:
+        "{run}/benchmark/qiime2_phylogeny_fasttree.txt"
+    message: "Generating phylogenic tree with fasttree"
+    threads: config['threads']
+    shell:
+        """
+        qiime phylogeny fasttree \
+        --i-alignment {input} \
+        --o-tree {output} \
+        --p-n-threads {threads}
+        """
+
+rule qiime2_phylogeny_midpoint_root:
+    input:
+        tree = "{run}/{run}-unrooted-tree.qza"
+    output:
+        "{run}/{run}-rooted-tree.qza"
+    benchmark:
+        "{run}/benchmark/qiime2_phylogeny_midpoint-root.txt"
+    message: "Root phylogenic tree"
+    threads: 1
+    shell:
+        """
+        qiime phylogeny midpoint-root \
+        --i-tree {input} \
+        --o-rooted-tree {output}
+        """
+
+rule qiime2_diversity_coremetricsphylogenetic:
+    input:
+        phylogeny = "{run}/{run}-rooted-tree.qza",
+        table = "{run}/{run}-table-dada2.qza"
+    output:
+        folder = "{run}/{run}-core-metrics-results",
+        faithpdvector = "{run}/{run}-core-metrics-results/{run}-faith_pd_vector.qza",
+        unweightedunifracdistance = "{run}/{run}-core-metrics-results/{run}-unweighted_unifrac_distance_matrix.qza",
+        unweightedunifracpcoa = "{run}/{run}-core-metrics-results/{run}-unweighted_unifrac_pcoa_results.qza",
+        rarefiedtable = "{run}/{run}-core-metrics-results/{run}-rarefied_table.qza",
+        observedotusvector = "{run}/{run}-core-metrics-results/{run}-observed_otus_vector.qza",
+        shannonvector = "{run}/{run}-core-metrics-results/{run}-shannon_vector.qza",
+        evennessvector = "{run}/{run}-core-metrics-results/{run}-evenness_vector.qza",
+        weightedunifracdistance = "{run}/{run}-core-metrics-results/{run}-weighted_unifrac_distance_matrix.qza",
+        jaccarddistance = "{run}/{run}-core-metrics-results/{run}-jaccard_distance_matrix.qza",
+        braycurtisdistance = "{run}/{run}-core-metrics-results/{run}-bray_curtis_distance_matrix.qza",
+        weightedunifracpcoa = "{run}/{run}-core-metrics-results/{run}-weighted_unifrac_pcoa_results.qza",
+        jaccardpcoa = "{run}/{run}-core-metrics-results/{run}-jaccard_pcoa_results.qza",
+        braycurtispcoa = "{run}/{run}-core-metrics-results/{run}-bray_curtis_pcoa_results.qza"
+
+    benchmark:
+        "{run}/benchmark/qiime2_diversity_coremetricsphylogenetic.txt"
+    message: "Calculate core metric (phylogenic)"
+    threads: config['threads']
+    params:
+        samplingdepth = config['samplingdepth']
+    shell:
+        """
+        qiime diversity core-metrics-phylogenetic\
+        --i-phylogeny {input.phylogeny} \
+        --i-table {input.table} \
+        --p-sampling-depth {params.samplingdepth} \
+        --p-n-jobs {threads}  \
+        --o-faith-pd-vector {output.faithpdvector}  \
+        --o-unweighted-unifrac-distance-matrix  {output.unweightedunifracdistance}  \
+        --o-unweighted-unifrac-pcoa-results {output.unweightedunifracpcoa}  \
+        --o-rarefied-table {output.rarefiedtable}  \
+        --o-observed-otus-vector {output.observedotusvector}  \
+        --o-shannon-vector {output.shannonvector}  \
+        --o-evenness-vector {output.evennessvector}  \
+        --o-weighted-unifrac-distance-matrix {output.weightedunifracdistance}  \
+        --o-jaccard-distance-matrix {output.jaccarddistance}  \
+        --o-bray-curtis-distance-matrix {output.braycurtisdistance}  \
+        --o-weighted-unifrac-pcoa-results {output.weightedunifracpcoa}  \
+        --o-jaccard-pcoa-results {output.jaccardpcoa}  \
+        --o-bray-curtis-pcoa-results {output.braycurtispcoa}
+
+        """
+
+rule qiime2_diversity_alphagroupsignificance:
+    input:
+        diversity = "{run}/{run}-core-metrics-results/{run}-faith_pd_vector.qza",
+        metadata = "{run}-metadata.tsv"
+    output:
+        "{run}/{run}-core-metrics-results/{run}-faith-pd-group-significance.qzv"
+    benchmark:
+        "{run}/benchmark/qiime2_diversity_alphagroupsignificance.txt"
+    message: "Calculate alpha group diversity"
+    threads: 1
+    shell:
+        """
+        qiime diversity alpha-group-significance \
+        --i-alpha-diversity {input.diversity} \
+        --m-metadata-file {input.metadata} \
+        --o-visualization {output}
+        """
+
+rule qiime2_diversity_betagroupsignificance :
+    input:
+        distance = "{run}/{run}-core-metrics-results/{run}-unweighted_unifrac_distance_matrix.qza",
+        metadata = "{run}-metadata.tsv"
+    output:
+        "{run}/{run}-core-metrics-results/{run}-unweighted-unifrac-group-significance.qzv"
+    benchmark:
+        "{run}/benchmark/qiime2_diversity_betagroupsignificance.txt"
+    message: "Calculate beta group significance"
+    threads: config['threads']
+    params:
+        metacat = config['metacategory']
+    shell:
+        """
+        qiime diversity beta-group-significance \
+        --i-distance-matrix {input.distance} \
+        --m-metadata-file {input.metadata} \
+        --m-metadata-category {params.metacat} \
+        --o-visualization {output} \
+        --p-pairwise
+        """
+
+rule qiime2_emperorplot_unweighted_unifrac:
+    input:
+        pcoa = "{run}/{run}-core-metrics-results/{run}-unweighted_unifrac_pcoa_results.qza",
+        metadata = "{run}-metadata.tsv"
+    output:
+        "{run}/{run}-core-metrics-results/{run}-unweighted-unifrac-emperor.qzv"
+    benchmark:
+        "{run}/benchmark/qiime2_emperorplot_unweighted_unifrac:.txt"
+    message: "Create emperor plot"
+    threads: config['threads']
+    shell:
+        """
+        qiime emperor plot \
+        --i-pcoa {input.pcoa} \
+        --m-metadata-file {input.metadata} \
+        --o-visualization {output}
+        """
+
+rule qiime2_emperorplot_weighted_unifrac:
+    input:
+        pcoa = "{run}/{run}-core-metrics-results/{run}-weighted_unifrac_pcoa_results.qza",
+        metadata = "{run}-metadata.tsv"
+    output:
+        "{run}/{run}-core-metrics-results/{run}-weighted-unifrac-emperor.qzv"
+    benchmark:
+        "{run}/benchmark/qiime2_emperorplot_weighted_unifrac.txt"
+    message: "Create emperor plot"
+    threads: config['threads']
+    shell:
+        """
+        qiime emperor plot \
+        --i-pcoa {input.pcoa} \
+        --m-metadata-file {input.metadata} \
+        --o-visualization {output}
+        """
+
+
+rule qiime2_download_gg:
+    output:
+        "{run}/gg-13-8-99-nb-classifier.qza"
+    benchmark:
+        "{run}/benchmark/qiime2_download_gg.txt"
+    message: "Download gg classifier file"
+    threads: config['threads']
+    shell:
+        """
+        wget -O {output} https://data.qiime2.org/2017.9/common/gg-13-8-99-nb-classifier.qza
+        """
+
+rule qiime2_feature_classifier:
+    input:
+        classifier = "{run}/gg-13-8-99-nb-classifier.qza",
+        reads = "{run}/{run}-rep-seqs-dada2.qza"
+    output:
+        "{run}/{run}-taxonomy.qza"
+    benchmark:
+        "{run}/benchmark/qiime2_feature_classifier.txt"
+    message: "Classify reads"
+    threads: config['threads']
+    shell:
+        """
+        qiime feature-classifier classify-sklearn \
+        --i-classifier {input.classifier} \
+        --i-reads {input.reads} \
+        --o-classification {output}
+        """
+
+rule qiime2_taxa_barplot:
+    input:
+        table = "{run}/{run}-table-dada2.qza",
+        taxonomy = "{run}/{run}-taxonomy.qza",
+        metadata = "{run}-metadata.tsv"
+    output:
+        "{run}/{run}-taxa-bar-plots.qzv"
+    benchmark:
+        "{run}/benchmark/qiime2_taxa_barplot.txt"
+    message: "Create barplots"
+    threads: config['threads']
+    shell:
+        """
+        qiime taxa barplot \
+        --i-table {input.table} \
+        --i-taxonomy {input.taxonomy} \
+        --m-metadata-file {input.metadata} \
+        --o-visualization {output}
+        """
+
+rule qiime2_metadata_tabulate:
+    input:
+        taxonomy = "{run}/{run}-taxonomy.qza"
+    output:
+        "{run}/{run}-taxonomy.qzv"
+    benchmark:
+        "{run}/benchmark/qiime2_metadata_tabulate.txt"
+    message: "Tabulate metadata"
+    threads: config['threads']
+    shell:
+        """
+        qiime metadata tabulate \
+        --m-input-file {input.taxonomy} \
+        --o-visualization {output}
+        """
