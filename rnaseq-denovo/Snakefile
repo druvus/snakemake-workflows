@@ -12,19 +12,19 @@ import os
 
 rule all:
     input:
-        expand("fastq_merged/{sample}_merged.fastq", sample=config["samples"]),
+#        expand("fastq_merged/{sample}_merged.fastq", sample=config["samples"]),
         "rRNA_databases/silva-euk-28s-id98.fasta.idx.stats",
-        expand("fastq_concatenated/{run_name}_1.fastq", run_name=config["run_name"]),
+#        expand("fastq_concatenated/{run_name}_1.fastq", run_name=config["run_name"]),
         "trinity_out_dir/Trinity.fasta",
         "trinity_db/Trinity.1.ebwt",
-        expand("{sample}_Aligned.out.bam.corset-reads", sample=config["samples"]),
+#        expand("{sample}_Aligned.out.bam.corset-reads", sample=config["samples"]),
         "clusters.txt",
         "trinity_db/Genome",
-        expand("fastq_mapped_star_trinity/{sample}_Aligned.out.bam", sample=config["samples"]),
+#        expand("fastq_mapped_star_trinity/{sample}_Aligned.out.bam", sample=config["samples"]),
 #        "Lace/SuperDuper.fasta",
         "super_db/Genome",
-        expand("fastq_mapped_star_super/{sample}_Aligned.out.bam", sample=config["samples"]),
-        expand("fastq_mapped_star_super/{sample}_SJ.out.tab", sample=config["samples"]),
+#        expand("fastq_mapped_star_super/{sample}_Aligned.out.bam", sample=config["samples"]),
+#        expand("fastq_mapped_star_super/{sample}_SJ.out.tab", sample=config["samples"]),
         "mobius/Spliced.gtf"
     threads: 60
 

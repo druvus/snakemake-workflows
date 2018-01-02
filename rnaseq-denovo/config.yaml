@@ -12,4 +12,4 @@ samples: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"]
 
 dbfiles: ["rfam-5.8s-database-id98.fasta", "rfam-5s-database-id98.fasta", "silva-arc-16s-id95.fasta", "silva-arc-23s-id98.fasta", "silva-bac-16s-id90.fasta", "silva-bac-23s-id98.fasta", "silva-euk-18s-id95.fasta", "silva-euk-28s-id98.fasta"]
 
-run_name: "vole"
+run_name: "vole2018"
